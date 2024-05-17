@@ -9,8 +9,8 @@ const PORT = process.env.PORT || 3000;
 // Body parsing middleware
 app.use(express.json());
 
-// Connect to MongoDB
-mongoose.connect('mongodb://localhost:27017/books', { useNewUrlParser: true, useUnifiedTopology: true });
+/// Connect to MongoDB
+mongoose.connect('mongodb://localhost:27017/books');
 const db = mongoose.connection;
 db.on('error', console.error.bind(console, 'MongoDB connection error:'));
 
@@ -21,16 +21,23 @@ const bookSchema = new mongoose.Schema({
     summary: String
 });
 const Book = mongoose.model('Book', bookSchema);
-
 // CRUD Routes
 // Create a new book
 app.post('/books', async (req, res) => {
     try {
-        // Extract name and img from the request body
-        const { name, img,summary} = req.body;
+        // Extract name, img, and summary from the request body
+        const { name, img, summary } = req.body;
+
+        // Validate that all required fields are provided
+        if (!name || !img || !summary) {
+            return res.status(400).json({ message: 'Name, img, and summary are required' });
+        }
 
         // Create a new book object with the extracted data
-        const newBook = await Book.create({ name, img,summary });
+        const newBook = new Book({ name, img, summary });
+        
+        // Save the new book to the database
+        await newBook.save();
 
         // Send a success response with the newly created book object
         res.status(201).json(newBook);
@@ -41,10 +48,20 @@ app.post('/books', async (req, res) => {
 });
 
 
-// Read all books
+// Read all books with optional filters
 app.get('/books', async (req, res) => {
     try {
-        const books = await Book.find();
+        const { name, img, summary } = req.query;
+
+        // Building the filter object based on the provided query parameters
+        const filter = {};
+        if (name) filter.name = name;
+        if (img) filter.img = img;
+        if (summary) filter.summary = summary;
+
+        // Finding books based on the filter
+        const books = await Book.find(filter);
+
         res.json(books);
     } catch (err) {
         res.status(500).json({ message: err.message });
@@ -52,17 +69,23 @@ app.get('/books', async (req, res) => {
 });
 
 // Read a single book
-app.put('/books/:id', async (req, res) => {
+app.get('/books/:id', async (req, res) => {
     try {
-        // Extract name and img from the request body
-        const { name, img,summary } = req.body;
-        const updatedBook = await Book.findByIdAndUpdate(req.params.id, { name, img,summary }, { new: true });
-        if (!updatedBook) {
+        // Extract name, img, and summary from the request body
+        const { name, img, summary } = req.body;
+
+        const book = await Book.findById(req.params.id);
+        if (book == null) {
             return res.status(404).json({ message: 'Book not found' });
         }
-        res.json(updatedBook);
+
+        // Include the extracted fields in the response if needed (demonstration purposes)
+        res.json({
+            book,
+            requestedFields: { name, img, summary }
+        });
     } catch (err) {
-        res.status(400).json({ message: err.message });
+        res.status(500).json({ message: err.message });
     }
 });
 
@@ -72,7 +95,6 @@ app.put('/books/:id', async (req, res) => {
     try {
         // Extract name and img from the request body
         const { name, img, summary } = req.body;
-        const {id} = req.params;
 
         // Check if any of the fields are missing in the request body
         if (!name || !img || !summary) {
@@ -81,9 +103,9 @@ app.put('/books/:id', async (req, res) => {
 
         // Update the book in the database with the provided data
         const updatedBook = await Book.findByIdAndUpdate(
-            id, 
-            { name, img, summary }, 
-            { new: true } 
+            req.params.id, // id of the book to update
+            { name, img, summary }, // updated data
+            { new: true } // return the updated document
         );
 
         // Check if the book was found and updated successfully
@@ -98,6 +120,8 @@ app.put('/books/:id', async (req, res) => {
         res.status(400).json({ message: err.message });
     }
 });
+
+
 
 // Delete a book
 app.delete('/books/:id', async (req, res) => {
